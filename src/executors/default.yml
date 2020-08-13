@@ -1,0 +1,3 @@
+description: |
+      This executor is defined to be used for Prisma Cloud IaC Scan.
+machine: true
