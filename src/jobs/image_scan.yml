@@ -1,0 +1,40 @@
+description: |
+        Simple scan job to scan the image using twistcli.
+executor: compute
+parameters:
+  prisma_cloud_compute_user:
+    description: The Prisma Cloud Compute user with the CI User role
+    type: string
+    default: $PC_COMPUTE_USER
+  prisma_cloud_compute_pass:
+    description: The Prisma Cloud Compute user's password
+    type: env_var_name
+    default: PC_COMPUTE_PASS
+  prisma_cloud_compute_url:
+    description: The base URL for the console -- http://console.<my_company>.com:8083 -- without a trailing /
+    type: string
+    default: $PC_CONSOLE_URL
+  workspace_name:
+    description: Name of workspace to Docker save the image-tar into so it can be scanned by orb
+    type: string
+    default: workspace 
+  image_tar:
+    description: The name of the image tar file stored in the workspace -- defaults to image.tar
+    type: string
+    default: image.tar
+  image:
+    description: The name of the image to scan -- myimage or myorg/myimage or myorg/myimage:latest
+    type: string
+steps:
+  - install:
+      prisma_cloud_compute_user: <<parameters.prisma_cloud_compute_user>>
+      prisma_cloud_compute_url: <<parameters.prisma_cloud_compute_url>>
+      prisma_cloud_compute_pass: <<parameters.prisma_cloud_compute_pass>>
+  - load:
+      pc_workspace_name: <<parameters.workspace_name>>
+      pc_image_tar: <<parameters.image_tar>>
+  - scan:
+      prisma_cloud_compute_user: <<parameters.prisma_cloud_compute_user>>
+      prisma_cloud_compute_pass: <<parameters.prisma_cloud_compute_pass>>
+      prisma_cloud_compute_url: <<parameters.prisma_cloud_compute_url>>
+      pc_image: <<parameters.image>>
