@@ -1,0 +1,58 @@
+description: |
+            Simple scan job to first authenticate user and then perform IaC scan on the templates.
+executor: default
+parameters:
+  access_key:
+    description: Prisma Cloud Access Key
+    type: env_var_name
+    default: PC_ACCESS_KEY
+  secret_key:
+    description: Prisma Cloud Secret Key
+    type: env_var_name
+    default: PC_SECRET_KEY
+  prisma_cloud_api_url:
+    description: Prisma Cloud Server Url
+    type: string
+    default: $PC_CONSOLE_URL
+  terraform_variable_filenames:
+    description: Comma separated list of filenames containing Terraform variables.
+    type: string
+    default: ""
+  templates_directory_path:
+    description: Directory path where IaC templates are stored.
+    type: string
+    default: .
+  failure_criteria_high_severity:
+    description: Provide failure threshold for high severity security issues.
+    type: integer
+    default: 0
+  failure_criteria_medium_severity:
+    description: Provide failure threshold for medium severity security issues.
+    type: integer
+    default: 0
+  failure_criteria_low_severity:
+    description: Provide failure threshold for low severity security issues.
+    type: integer
+    default: 0
+  failure_criteria_operator:
+    description: Provide operator for high, medium, low severity failure thresholds.
+    type: string
+    default: or
+  tags:
+    description: Provide the Tags for the repo.
+    type: string
+    default: ""
+steps:
+  - checkout
+  - auth:
+      access_key: <<parameters.access_key>>
+      secret_key: <<parameters.secret_key>>
+      prisma_cloud_api_url: <<parameters.prisma_cloud_api_url>>        
+  - iac_scan:
+      terraform_variable_filenames: <<parameters.terraform_variable_filenames>>
+      templates_directory_path: <<parameters.templates_directory_path>>
+      failure_criteria_high_severity: <<parameters.failure_criteria_high_severity>>
+      failure_criteria_medium_severity: <<parameters.failure_criteria_medium_severity>>
+      failure_criteria_low_severity: <<parameters.failure_criteria_low_severity>>
+      failure_criteria_operator: <<parameters.failure_criteria_operator>>
+      tags: <<parameters.tags>>
