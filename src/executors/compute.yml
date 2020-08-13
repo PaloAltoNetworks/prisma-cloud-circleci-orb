@@ -1,0 +1,4 @@
+description: |
+        Defines the working directory for Prisma Compute Scans.
+machine: true
+working_directory: /tmp/twistlock-scan
