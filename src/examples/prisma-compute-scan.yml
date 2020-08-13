@@ -1,0 +1,33 @@
+description: |
+            Scans the container image for any vulnerabilities. The 'docker_build_and_save' job lists the steps required before calling the 'image_scan' job from the orb.
+usage:
+  version: 2.1
+
+  orbs:
+    prisma: prisma_cloud/devops_security@2.0.0
+
+  jobs:
+      docker_build_and_save:
+        executor: prisma/compute
+        steps:
+          - checkout
+          - run: 'docker pull nginx'
+          - run: mkdir -p workspace
+          - run: 'docker image'
+          - run: 'docker save nginx:latest -o workspace/image.tar'
+          - persist_to_workspace:
+              root: workspace
+              paths:
+              - image.tar
+  workflows:
+    scan:
+      jobs:
+        - docker_build_and_save
+        - prisma/image_scan:
+            requires:
+              - docker_build_and_save
+            prisma_cloud_compute_url: <prisma cloud compute console url>  # Default env variable: PC_COMPUTE_URL
+            prisma_cloud_compute_user: <prisma cloud compute username>  # Default env variable: PC_COMPUTE_USER
+            prisma_cloud_compute_pass: PC_COMPUTE_PASS # Default env variable: PC_COMPUTE_PASS
+            image: 'myrepo/myimage:tag'
+            image_tar: image.tar
