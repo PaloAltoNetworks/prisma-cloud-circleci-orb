@@ -1,0 +1,18 @@
+description: Scan the container image with twistcli
+parameters:
+  prisma_cloud_compute_user:
+    description: The Prisma Cloud Compute user with the CI User role
+    type: string
+  prisma_cloud_compute_pass:
+    description: The Prisma Cloud Compute user's password
+    type: env_var_name
+  prisma_cloud_compute_url:
+    description: The base URL for the console -- http://console.<my_company>.com:8083 -- without a trailing /
+    type: string
+  pc_image:
+    description: The name of the image to scan -- myimage or myorg/myimage or myorg/myimage:latest
+    type: string
+steps:
+  - run: >
+      ./twistcli images scan --ci --details --address <<parameters.prisma_cloud_compute_url>> -u <<parameters.prisma_cloud_compute_user>> -p ${<<parameters.prisma_cloud_compute_pass>>}
+      <<parameters.pc_image>>

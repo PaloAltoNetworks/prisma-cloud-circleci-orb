@@ -1,0 +1,14 @@
+description: Download the twistcli static binary from the Console
+parameters:
+  prisma_cloud_compute_user:
+    description: The Prisma Cloud Compute user with the CI User role
+    type: string
+  prisma_cloud_compute_pass:
+    description: The Prisma Cloud Compute user's url
+    type: env_var_name
+  prisma_cloud_compute_url:
+    description: The base URL for the console -- http://console.<my_company>.com:8083 -- without a trailing /
+    type: string
+steps:
+  - run: curl -k -u <<parameters.prisma_cloud_compute_user>>:${<<parameters.prisma_cloud_compute_pass>>} --output ./twistcli <<parameters.prisma_cloud_compute_url>>/api/v1/util/twistcli
+  - run: sudo chmod a+x ./twistcli 

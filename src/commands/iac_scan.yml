@@ -1,0 +1,232 @@
+description: Scan the repo for vulnerabilities in the templates against default and custom rules
+parameters:
+  terraform_variable_filenames:
+    description: Comma separated list of filenames containing Terraform variables.
+    type: string
+    default: ""
+  templates_directory_path:
+    description: Directory path where IaC templates are stored.
+    type: string
+    default: .
+  failure_criteria_high_severity:
+    description: Provide failure threshold for high severity security issues.
+    type: integer
+    default: 0
+  failure_criteria_medium_severity:
+    description: Provide failure threshold for medium severity security issues.
+    type: integer
+    default: 0
+  failure_criteria_low_severity:
+    description: Provide failure threshold for low severity security issues.
+    type: integer
+    default: 0
+  failure_criteria_operator:
+    description: Provide operator for high, medium, low serverity failure thresholds.
+    type: string
+    default: or
+  tags:
+    description: Provide the Tags for the repo.
+    type: string
+    default: ""
+steps:
+  - run:
+      command: |
+        #################################################################
+        # SCAN RESULTS
+        #################################################################
+        source $BASH_ENV
+        ##################################################################
+        # Generate the terraform parameters header
+        ##################################################################
+
+        wget https://github.com/mikefarah/yq/releases/download/3.2.1/yq_linux_386
+        sudo mv yq_linux_386 /usr/local/bin/yq
+        sudo chmod +x /usr/local/bin/yq
+
+        if [[ ! -f .prismaCloud/config.yml ]]
+        then
+          echo "Can not find config.yml under .prismaCloud folder in repo ${CIRCLE_PROJECT_REPONAME}. Please make sure the file is present in correct format (refer: https://docs.paloaltonetworks.com/prisma/prisma-cloud/prisma-cloud-admin/prisma-cloud-devops-security/use-the-prisma-cloud-plugin-for-circleci.html)  at the root of your repo under .prismaCloud folder."
+          exit 1;
+        fi
+        headers=""
+        url=""
+        fileContents=$(yq read -j .prismaCloud/config.yml)
+        #echo "file contents are: " $fileContents
+        templateType="$(echo "$fileContents" | jq -r '.template_type')"
+        #echo "template type: " $templateType
+
+        if [[ ! -z "$templateType" && ( "$templateType" == "TF" || "$templateType" == "tf" ) ]]
+        then
+          url="$PC_HOST/iac/tf/v1/scan"
+          terraformVersion="$(echo "$fileContents" | jq -r '.terraform_version')"
+          if [[ ! -z "$terraformVersion" && ( "$terraformVersion" == 0.12 || "$terraformVersion" > 0.12 ) ]]
+          then
+            headers+=" -H terraform-version:0.12"
+            isTerraform12ParamsPresent="$(echo "$fileContents" | jq -r '.terraform_012_parameters')"
+            if [[ "$isTerraform12ParamsPresent" != null ]]
+            then
+              terraformContents="$(echo "$fileContents" | jq -r '.terraform_012_parameters[] |= with_entries( .key |= gsub("root_module"; "root-module") )' | jq -r '.terraform_012_parameters[] |= with_entries( .key |= gsub("variable_files"; "variable-files") )' )"
+              terraform012Parameters="$(echo "$terraformContents" | jq -r '.terraform_012_parameters' | tr -d '\n\t' | tr -d '[:blank:]')"
+              if [[  "$terraform012Parameters" != null ]]
+              then
+                headers+=" -H terraform-012-parameters:$terraform012Parameters"
+              fi
+            fi 
+          else
+            headers+=" -H terraform-version:0.11"
+            #read terraform 0.11 parameters
+            variableFiles="$(echo "$fileContents" | jq -r '.terraform_011_parameters.variable_files' | tr -d '\n\t' | tr -d '[:blank:]')"
+            variableValues="$(echo "$fileContents" | jq -r '.terraform_011_parameters.variable_values' | tr -d '\n\t' | tr -d '[:blank:]')"
+            if [[ "$variableFiles" != null ]]
+            then
+              headers+=" -H rl-variable-file-names:$variableFiles"
+            fi
+            if [[ "$variableValues" != null ]]
+            then
+              headers+=" -H rl-parameters:$variableValues"
+            fi
+          fi
+        elif [[ ! -z "$templateType" && ( "$templateType" == "CFT" || "$templateType" == "cft" ) ]]
+        then
+          url="$PC_HOST/iac/cft/v1/scan"
+          variableValues="$(echo "$fileContents" | jq -r '.cft_parameters.variable_values' | tr -d '\n\t' | tr -d '[:blank:]')"
+          if [[ "$variableValues" != null ]]
+          then
+           headers+=" -H rl-parameters:$variableValues"
+          fi
+        elif [[ ! -z "$templateType" && ( "$templateType" == "K8S" || "$templateType" == "k8s" || "$templateType" == "K8s" ) ]]
+        then
+          url="$PC_HOST/iac/k8s/v1/scan"
+        else
+          echo "No valid template-type found in config.yml file in repo ${CIRCLE_PROJECT_REPONAME}. Please specify either of these values: TF, CFT or K8s as template-type variable in the config.yml"
+          exit 1;
+        fi
+
+        #echo url: "$url"
+        #echo header: "$headers"
+        ##################################################################
+
+        SCAN_PATH=<<parameters.templates_directory_path>>
+        searchstring="/"
+        rest=${SCAN_PATH#*$searchstring}
+        indexValue=$(( ${#SCAN_PATH} - ${#rest} - ${#searchstring} ))
+        if [[ "$indexValue" == 0 ]] 
+        then
+          #echo " I am here"
+          SCAN_PATH="$rest"
+        fi
+        #echo "After scan path: $SCAN_PATH"
+        zip -r repo.zip $SCAN_PATH -x '*.git*'
+
+        file_size="$(wc -c repo.zip | awk '{print $1}')"
+        #echo "$file_size"
+        file_size_limit=1000000
+        if [[ "$file_size" -gt "$file_size_limit" ]]
+        then
+          printf "\nDirectory size ${CIRCLE_PROJECT_REPONAME} more than 2 MB is not supported."
+          exit 1;
+        fi
+
+        settings_tags="${TAGS}"
+        repo_tags="$(echo "$fileContents" | jq -r '.tags' |tr -d '\n\t' | tr -d '[:blank:]')"
+        task_tags="<<parameters.tags>>"
+        prisma_tags=""
+        if [[ ! -z "$settings_tags" ]] 
+        then
+          temp="\"$(sed 's/,/","/g' \<<< "$settings_tags")\""
+          prisma_tags="\"settings_tags\":[$temp]"
+        fi
+        if [[ ! -z "$repo_tags" ]]
+        then
+          if [[ "$prisma_tags" == "" ]]
+          then
+            prisma_tags+="\"repo_tags\":$repo_tags"
+          else
+            prisma_tags+=", \"repo_tags\":$repo_tags"
+          fi
+        fi
+        if [[ ! -z "$task_tags" ]] 
+        then
+          temp="\"$(sed 's/,/","/g' \<<< "$task_tags")\""
+          if [[ "$prisma_tags" == "" ]]
+          then
+             prisma_tags+="\"task_tags\":[$temp]"
+          else
+            prisma_tags+=", \"task_tags\":[$temp]"
+          fi
+        fi
+        ##################################################################
+        # creating metadata structure
+        metadata_json={"asset-name":"$ASSET_NAME","asset-type":"CircleCI","user-id":"${CIRCLE_PROJECT_USERNAME}","prisma_tags":{"$prisma_tags"},"scan-attributes":{"build-number":"${CIRCLE_BUILD_NUM}","project-name":"${CIRCLE_PROJECT_REPONAME}"},"failure-criteria":{"high":"<<parameters.failure_criteria_high_severity>>","medium":"<<parameters.failure_criteria_medium_severity>>","low":"<<parameters.failure_criteria_low_severity>>","operator":"<<parameters.failure_criteria_operator>>"}}
+        #echo metadata "$metadata_json"
+        ##################################################################
+
+        response=$(curl -X POST "$url" -H "x-redlock-auth:${AUTH_TOKEN}" --user-agent "CircleCI/2.0.0" $headers -H "x-redlock-iac-metadata:${metadata_json}" -F templateFile=@repo.zip)
+        if [ ! -z "$PC_PLUGIN_DEBUG" && "$PC_PLUGIN_DEBUG" == true ] ; then
+          echo "DEBUG: response: $response"
+        fi
+        result="$(echo "$response" | jq -r '.result.is_successful')"
+        RESULTS_DIRECTORY=$(mktemp -d scanResults.XXXXXXXX)
+        if [[ "$result" == "true" ]]
+        then
+          partial_failure="$(echo "$response" | jq -r '.result.partial_failure')"
+          #echo "partial_failure: $partial_failure"
+          matched="$(echo "$response" | jq -r '.result.rules_matched')"
+          #echo "matched: $matched"
+          if [[ "$matched" != null ]]
+          then
+            stats="$(echo "$response" | jq -r '.result.severity_stats')"
+            echo $matched | jq '["Severity","Name","Description","Files"], (map({severity, name, description, files} ) | .[] | [.severity, .name, .description, (.files|join(";"))]) | @csv' | tr -d '\\"'> $RESULTS_DIRECTORY/scan_results.csv
+            awk -F'\t' -v OFS='\t' '
+              NR == 1 {print "Index", $0; next}
+              {print (NR-1), $0}
+            ' $RESULTS_DIRECTORY/scan_results.csv > $RESULTS_DIRECTORY/scan.csv
+
+            echo $matched |  jq '["Severity","Name","Files"], (map({severity, name, files} ) | .[] | [.severity, .name, (.files|join(";"))]) | @csv'| column -t -s "," | tr -d '\\"' > $RESULTS_DIRECTORY/formatted.csv
+            awk -F'\t' -v OFS='\t' '
+              NR == 1 {print "\nIndex", $0; print "------------------------------------------------------------------------------------------------------------------------------------------------------" ;  next}
+              {print (NR-1), $0}
+            ' $RESULTS_DIRECTORY/formatted.csv > $RESULTS_DIRECTORY/console_output.csv
+
+
+            #################################################################
+            # SCAN RESULTS
+            #################################################################
+
+            cat $RESULTS_DIRECTORY/console_output.csv
+
+            high="$(echo "$stats" | jq -r '.high')"
+            medium="$(echo "$stats" | jq -r '.medium')"
+            low="$(echo "$stats" | jq -r '.low')"
+
+            if [[ ( ( <<parameters.failure_criteria_operator>> == "or" ) && ( "$high" -ge <<parameters.failure_criteria_high_severity>> ) || ( "$medium" -ge <<parameters.failure_criteria_medium_severity>> ) || ( "$low" -ge <<parameters.failure_criteria_low_severity>> ) ) || ( (<<parameters.failure_criteria_operator>> == "and") && ( "$high" -ge <<parameters.failure_criteria_high_severity>> ) && ( "$medium" -ge <<parameters.failure_criteria_medium_severity>> ) && ( "$low" -ge <<parameters.failure_criteria_low_severity>> ) ) ]]
+            then
+              printf "\nPrisma Cloud IaC scan has failed as security issues count (high: \"${high}\", medium: \"${medium}\", low: \"${low}\") meets or exceeds the failure criteria (high:<<parameters.failure_criteria_high_severity>>, medium:<<parameters.failure_criteria_medium_severity>>, low:<<parameters.failure_criteria_low_severity>>, operator:<<parameters.failure_criteria_operator>>). For more details on the issues, please refer to: https://iacscanapidoc.redlock.io/content"
+              if [[ ! -z "$partial_failure" ]]
+              then
+                printf "\n$partial_failure"
+              fi  
+              exit 1;
+            else
+              printf "\nPrisma Cloud IaC Scan has been successful as security issues count (high: \"${high}\", medium: \"${medium}\", low: \"${low}\") does not exceed the failure criteria (high:<<parameters.failure_criteria_high_severity>>, medium:<<parameters.failure_criteria_medium_severity>>, low:<<parameters.failure_criteria_low_severity>>, operator:<<parameters.failure_criteria_operator>>). For more details on the issues, please refer to: https://iacscanapidoc.redlock.io/content"
+              if [[ ! -z "$partial_failure" ]]
+              then
+                printf "\n$partial_failure"
+              fi  
+              exit 0;
+            fi
+          else  
+            printf "\nGood job! Prisma Cloud did not detect any issues."
+            exit 0;
+          fi
+          if [[ ! -z "$partial_failure" ]]
+          then
+            printf "\n$partial_failure"
+          fi  
+        else
+          error_message="$(echo "$response" | jq -r '.result.error_details')"
+          printf "\n$error_message"
+          exit 1;
+        fi
+  - store_artifacts:
+      path: scanResults/scan.csv

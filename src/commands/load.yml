@@ -1,0 +1,12 @@
+description: Load the image into the Executor machine from the tar file stashed in the Workspace
+parameters:
+  pc_image_tar:
+    description: The name of the image tar file stored in the workspace
+    type: string
+  pc_workspace_name:
+    description: Name of workspace to Docker save the image into so it can be scanned by orb
+    type: string
+steps:
+  - attach_workspace:
+      at: <<parameters.pc_workspace_name>>
+  - run: docker load -i <<parameters.pc_workspace_name>>/<<parameters.pc_image_tar>>
