@@ -7,7 +7,10 @@
 
 version: 2.1
 description: >
-  Apply consistent checks throughout the build-to-release process for keeping your applications and infrastructure secure. With Prisma Cloud IaC Scan, identify insecure configurations in common Infrastructure-as-Code (IaC) templates - AWS Cloud Formation Templates, HashiCorp Terraform templates, Kubernetes App Deployment YAML files, etc. With Prisma Cloud Compute TwistCLI Scan, identify vulnerabilities among your container images.
+  Apply consistent checks throughout the build-to-release process to keep your applications and infrastructure secure. 
+  With Prisma Cloud IaC Scan, identify insecure configurations in common Infrastructure-as-Code (IaC) templates, 
+  including AWS Cloud Formation, among others. With Prisma Cloud Compute TwistCLI Scan, identify vulnerabilities among 
+  your container images. 
 display:
   home_url: https://docs.paloaltonetworks.com/prisma/prisma-cloud/prisma-cloud-admin/prisma-cloud-devops-security.html
   source_url: https://github.com/PaloAltoNetworks/prisma-cloud-circleci-orb
