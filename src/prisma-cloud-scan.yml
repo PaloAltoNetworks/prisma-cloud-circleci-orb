@@ -527,9 +527,11 @@ executors:
   default:
     description: |
             This executor is defined to be used for Prisma Cloud IaC Scan.
-    machine: true
+    machine:
+      image: ubuntu-2004:202201-02
   compute:
     description: |
             Defines the working directory for Prisma Compute Scans.
-    machine: true
+    machine:
+      image: ubuntu-2004:202201-02
     working_directory: /tmp/twistlock-scan
